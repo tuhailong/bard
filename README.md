@@ -6,36 +6,22 @@ This CLI allows you to save chat history as a Markdown file at a specified absol
 
 and handles graceful exit with Ctrl+C.
 
-![image](https://github-production-user-asset-6210df.s3.amazonaws.com/2356749/238815571-3f2658d0-9bc2-4b56-949d-1bcf3bd9ceab.png)
-
----
-
-![output](https://user-images.githubusercontent.com/2356749/235344630-c39a286e-039d-4a45-bce2-e2c7f28a5008.gif)
-
 ## Prerequisites
 
 You need to have Rust and Cargo installed on your system. If you don't have them, you can install them from the [official Rust website](https://www.rust-lang.org/tools/install).
 
 ## Installation
 
-Install from cargo.
-
-```bash
-cargo install bard-rs
-```
-
-or
-
 1. Clone the repository to your local machine:
 
    ```
-   git clone https://github.com/Alfex4936/Bard-rs
+   git clone https://github.com/tuhailong/bard
    ```
 
 2. Change the working directory:
 
    ```
-   cd Bard-rs
+   cd bard
    ```
 
 3. Build the project:
@@ -61,7 +47,7 @@ Now you can use the Google Bard CLI:
 It'll save as your first prompt message. (eg: "Hey yo" -> bard_hey_yo.md)
 
 ```
-bard-rs --session <your_session_cookie> --path ./
+bard --session <your_session_cookie> --path ./
 ```
 
 Replace `<your_session_cookie>` with the value you copied from the Developer Tools.
@@ -69,31 +55,31 @@ Replace `<your_session_cookie>` with the value you copied from the Developer Too
 If you don't want to save the chat history as a Markdown file, skip `--path`:
 
 ```
-bard-rs --session <your_session_cookie>
+bard --session <your_session_cookie>
 ```
 
 If you don't want to pass that long session in terminal, use `.env` file
 
 ```
-bard-rs -e .env -p ./
+bard -e .env -p ./
 ```
 
-If you prefer not to specify a path, `bard-rs` will automatically search for the .env file in the following locations: the argument-provided path, the current working directory, and the directory of the bard-rs binary.
+If you prefer not to specify a path, `bard` will automatically search for the .env file in the following locations: the argument-provided path, the current working directory, and the directory of the bard binary.
 
 (`-p` is still required if you want to save the chat history as markdown file.)
 
 ```
-bard-rs
+bard
 ```
 
-above command is same as `bard-rs -e .env`
+above command is same as `bard -e .env`
 
-`.env` file must contain `SESSION_ID` key. (the keys being used for the `-s` value and `SESSION_ID` are identical, they are both derived from `__Secure-1PSID`)
+`.env` file must contain `BARD_SESSION_ID` key. (the keys being used for the `-s` value and `BARD_SESSION_ID` are identical, they are both derived from `__Secure-1PSID`)
 
-> ! using `echo SESSION_ID=... > .env` might cause encoding problem that `dotenv` cannot read and end up causing no session key error.
+> ! using `echo BARD_SESSION_ID=... > .env` might cause encoding problem that `dotenv` cannot read and end up causing no session key error.
 
 ```
-SESSION_ID=~.
+BARD_SESSION_ID=~.
 ```
 
 ## Commands
@@ -106,6 +92,3 @@ SESSION_ID=~.
 
 This project is licensed under the [MIT License](LICENSE).
 
-
-Credits:
-- [acheong08](https://github.com/acheong08) - Inspired by this Python version.
