@@ -322,6 +322,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 if input.is_empty() {
                     print!("{} What can I do for you?\n", bard);
+                    print!("\n");
                     continue;
                 }
 
