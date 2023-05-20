@@ -17,7 +17,6 @@ use rustyline::completion::FilenameCompleter;
 use rustyline::error::ReadlineError;
 use rustyline::highlight::{Highlighter, MatchingBracketHighlighter};
 use rustyline::hint::HistoryHinter;
-use rustyline::validate::MatchingBracketValidator;
 use rustyline::{Completer, Helper, Hinter, Validator};
 use rustyline::{CompletionType, Config, EditMode, Editor};
 
@@ -26,8 +25,6 @@ struct MyHelper {
     #[rustyline(Completer)]
     completer: FilenameCompleter,
     highlighter: MatchingBracketHighlighter,
-    #[rustyline(Validator)]
-    validator: MatchingBracketValidator,
     #[rustyline(Hinter)]
     hinter: HistoryHinter,
     colored_prompt: String,
@@ -85,6 +82,10 @@ struct Args {
         default_value = ""
     )]
     env: String,
+
+    /// Multiple answers
+    #[arg(short, long, help = "To show multiple answers at once")]
+    multi: bool,
 }
 
 struct Chatbot {
@@ -97,8 +98,8 @@ struct Chatbot {
 }
 
 impl Chatbot {
-    pub async fn new(bard_session_id: &str) -> Result<Self, Box<dyn Error>> {
-        let cookie = format!("__Secure-1PSID={bard_session_id}");
+    pub async fn new(session_id: &str) -> Result<Self, Box<dyn Error>> {
+        let cookie = format!("__Secure-1PSID={session_id}");
 
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"));
@@ -191,7 +192,6 @@ impl Chatbot {
         if let Some(chat_data) = chat_data {
             if let Value::String(chat_data_str) = chat_data {
                 let json_chat_data: Vec<Value> = serde_json::from_str(chat_data_str)?;
-
                 results.insert("content".to_string(), json_chat_data[0][0].clone());
                 results.insert("conversation_id".to_string(), json_chat_data[1][0].clone());
                 results.insert("response_id".to_string(), json_chat_data[1][1].clone());
@@ -269,7 +269,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         dotenv::from_path(args.env).ok();
     }
 
-    let bard_session_id = args
+    let session_id = args
         .session
         .or_else(|| std::env::var("BARD_SESSION_ID").ok())
         .or_else(|| {
@@ -288,70 +288,70 @@ async fn main() -> Result<(), Box<dyn Error>> {
         })
         .expect("No session ID provided. Either pass it with -s or provide a .env file");
 
-    let mut chatbot = Chatbot::new(&bard_session_id).await?;
+    let mut chatbot = Chatbot::new(&session_id).await?;
 
     let mut first_input = true;
     let mut file_path = None;
-
-    let bard = "Bard:".bright_cyan();
 
     let config = Config::builder()
         .history_ignore_space(true)
         .completion_type(CompletionType::List)
         .edit_mode(EditMode::Emacs)
         .build();
-    let h = MyHelper {
+
+    let helper = MyHelper {
         completer: FilenameCompleter::new(),
         highlighter: MatchingBracketHighlighter::new(),
         hinter: HistoryHinter {},
         colored_prompt: "".to_owned(),
-        validator: MatchingBracketValidator::new(),
     };
 
     let mut rl = Editor::with_config(config)?;
-    rl.set_helper(Some(h));
+    rl.set_helper(Some(helper));
 
-    let p = "You: ";
+    let user_prompt = "╭─ You\n╰─> ";
+    let bard_prompt = "╭─ Bard".bright_cyan();
+    let under_arrow = "╰─>".bright_cyan();
+    let mut last_response: Option<HashMap<String, Value>> = None;
 
+    println!("");
     loop {
-        rl.helper_mut().expect("No helper").colored_prompt = format!("\x1b[1;32m{p}\x1b[0m");
-        let readline = rl.readline(&p);
+        rl.helper_mut().expect("No helper").colored_prompt =
+            format!("\x1b[1;32m{p}\x1b[0m", p = user_prompt);
+        let readline = rl.readline(&user_prompt);
+
         match readline {
             Ok(line) => {
                 let input = line.trim();
-
                 if input.is_empty() {
-                    print!("{} What can I do for you?\n", bard);
-                    print!("\n");
+                    println!("\n{}", bard_prompt);
+                    println!("{} What can I do for you?\n", under_arrow);
                     continue;
                 }
+                rl.add_history_entry(input)?;
 
                 if first_input {
-                    let file_name = {
-                        let safe_input = input
-                            .chars()
-                            .take(10)
-                            .collect::<String>()
-                            .to_ascii_lowercase()
-                            .replace(' ', "_");
-                        let safe_input =
-                            safe_input.trim_start_matches(|c: char| !c.is_alphanumeric());
-                        if safe_input.is_empty() {
-                            "bard.md".to_string()
-                        } else {
-                            format!("bard_{}.md", safe_input)
-                        }
+                    let file_name = input
+                        .chars()
+                        .take(10)
+                        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+                        .collect::<String>()
+                        .to_ascii_lowercase()
+                        .replace(' ', "_");
+
+                    let file_name = if file_name.is_empty() {
+                        "bard.md".to_string()
+                    } else {
+                        format!("bard_{}.md", file_name)
                     };
 
                     first_input = false;
-
-                    file_path = if !args.path.is_empty() {
-                        let mut save_path = PathBuf::from(&args.path);
+                    file_path = if !args.path.trim().is_empty() {
+                        let mut path = PathBuf::from(&args.path);
                         if !args.path.ends_with('/') {
-                            save_path.push("/");
+                            path.push("/");
                         }
-                        save_path.push(&file_name);
-                        Some(save_path)
+                        Some(path.join(&file_name))
                     } else {
                         None
                     };
@@ -361,31 +361,60 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     break;
                 } else if input == "!reset" {
                     chatbot.reset();
+                } else if input == "!show" {
+                    if let Some(ref res) = last_response {
+                        println!("\n{}", bard_prompt);
+                        let array = res.get("choices").unwrap().as_array().unwrap();
+
+                        for (i, object) in array.iter().enumerate() {
+                            if let Some(content_array) = object["content"].as_array() {
+                                for string in content_array {
+                                    if let Some(s) = string.as_str() {
+                                        println!("\r{} {}. {}\n", under_arrow, i + 1, s);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
                     if let Some(file_path) = &file_path {
                         append_to_file(file_path, &format!("**You**: {}\n\n", input)).await?;
                     }
-                    print!("{} thinking...", bard);
+
+                    println!("\n{}", bard_prompt);
+                    print!("{} thinking...", under_arrow);
                     stdout().flush().unwrap(); // Flush the output
 
                     let response = chatbot.ask(input).await?;
                     let response_content = response.get("content").unwrap().as_str().unwrap();
 
-                    // Use \r to move the cursor to the beginning of the line and print the response
-                    println!("\r{} {}\n", bard, response_content);
+                    if args.multi {
+                        let array = response.get("choices").unwrap().as_array().unwrap();
+
+                        for (i, object) in array.iter().enumerate() {
+                            if let Some(content_array) = object["content"].as_array() {
+                                for string in content_array {
+                                    if let Some(s) = string.as_str() {
+                                        println!("\r{} {}. {}\n", under_arrow, i + 1, s);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Use \r to move the cursor to the beginning of the line and print the response
+                        println!("\r{} {}\n", under_arrow, response_content); // Print the second line
+                    }
 
                     if let Some(file_path) = &file_path {
                         append_to_file(file_path, &format!("**Bard**: {}\n\n", response_content))
                             .await?;
                     }
+
+                    last_response = Some(response);
                 }
             }
-            Err(ReadlineError::Interrupted) => {
-                println!("\nCtrl+C detected, exiting...");
-                break;
-            }
-            Err(ReadlineError::Eof) => {
-                println!("\nCtrl+D detected, exiting...");
+            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
+                println!("\nInterrupt signal detected, exiting...");
                 break;
             }
             Err(_) => {
